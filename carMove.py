@@ -1,9 +1,10 @@
-import RPi.GPIO as GPIO
+from picamera2 import Picamera2
 import cv2
+import keyboard  # 安装：pip install keyboard
 import time
-import keyboard  # 需要安装：pip install keyboard
+import RPi.GPIO as GPIO
 
-# 初始化GPIO
+# 初始化GPIO（BOARD编号模式）
 GPIO.setmode(GPIO.BOARD)
 
 # ===== 电机控制引脚（L298N）=====
@@ -19,73 +20,65 @@ GPIO.setup(IN3, GPIO.OUT)
 GPIO.setup(IN4, GPIO.OUT)
 
 # ===== 舵机控制引脚（预留）=====
-SERVO_PIN = 16  # 假设舵机接在GPIO16（BOARD编号）
+SERVO_PIN = 16  # 舵机信号线接GPIO16
 GPIO.setup(SERVO_PIN, GPIO.OUT)
 servo_pwm = GPIO.PWM(SERVO_PIN, 50)  # 50Hz PWM
-servo_pwm.start(0)  # 初始占空比0
+servo_pwm.start(0)
 
 def set_servo_angle(angle):
-    """控制舵机转动到指定角度（0~180°）"""
+    """控制舵机角度（0~180°）"""
     duty = angle / 18 + 2  # 角度转占空比
     servo_pwm.ChangeDutyCycle(duty)
-    time.sleep(0.3)  # 等待舵机转动
-    servo_pwm.ChangeDutyCycle(0)  # 停止信号，防止抖动
+    time.sleep(0.3)
+    servo_pwm.ChangeDutyCycle(0)  # 防止舵机抖动
 
 # ===== 电机控制函数 =====
 def stop_motors():
-    """停止所有电机"""
     GPIO.output(IN1, GPIO.LOW)
     GPIO.output(IN2, GPIO.LOW)
     GPIO.output(IN3, GPIO.LOW)
     GPIO.output(IN4, GPIO.LOW)
 
 def forward():
-    """前进（两个电机正转）"""
     GPIO.output(IN1, GPIO.HIGH)
     GPIO.output(IN2, GPIO.LOW)
     GPIO.output(IN3, GPIO.HIGH)
     GPIO.output(IN4, GPIO.LOW)
 
 def backward():
-    """后退（两个电机反转）"""
     GPIO.output(IN1, GPIO.LOW)
     GPIO.output(IN2, GPIO.HIGH)
     GPIO.output(IN3, GPIO.LOW)
     GPIO.output(IN4, GPIO.HIGH)
 
 def turn_left():
-    """左转（左轮反转，右轮正转）"""
     GPIO.output(IN1, GPIO.LOW)
     GPIO.output(IN2, GPIO.HIGH)
     GPIO.output(IN3, GPIO.HIGH)
     GPIO.output(IN4, GPIO.LOW)
 
 def turn_right():
-    """右转（右轮反转，左轮正转）"""
     GPIO.output(IN1, GPIO.HIGH)
     GPIO.output(IN2, GPIO.LOW)
     GPIO.output(IN3, GPIO.LOW)
     GPIO.output(IN4, GPIO.HIGH)
 
-# ===== 主程序 =====
-try:
-    # 初始化摄像头
-    cap = cv2.VideoCapture(0)
-    cap.set(3, 640)  # 设置宽度
-    cap.set(4, 480)  # 设置高度
+# ===== 初始化摄像头 =====
+picam2 = Picamera2()
+config = picam2.create_preview_configuration(main={"size": (640, 480), "format": "BGR888"})
+picam2.configure(config)
+picam2.start()
 
+try:
     print("WASD 控制小车，Q 退出")
     while True:
-        # 读取摄像头画面
-        ret, frame = cap.read()
-        if not ret:
-            print("摄像头读取失败！")
-            break
+        # 获取摄像头帧
+        frame = picam2.capture_array()
 
-        # 显示摄像头画面
+        # 显示画面
         cv2.imshow("Camera", frame)
 
-        # 检测键盘输入
+        # 键盘控制
         if keyboard.is_pressed('w'):
             forward()
             print("前进")
@@ -105,16 +98,15 @@ try:
             print("退出程序")
             break
 
-        # === 舵机控制示例（可扩展）===
-        # 例如：按数字键控制舵机角度
+        # 舵机控制示例（按1/2/3测试）
         if keyboard.is_pressed('1'):
-            set_servo_angle(45)  # 转到45°
+            set_servo_angle(45)
         elif keyboard.is_pressed('2'):
-            set_servo_angle(90)  # 转到90°
+            set_servo_angle(90)
         elif keyboard.is_pressed('3'):
-            set_servo_angle(135)  # 转到135°
+            set_servo_angle(135)
 
-        # 检测 OpenCV 窗口关闭
+        # 退出检测
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
@@ -125,7 +117,7 @@ finally:
     # 释放资源
     stop_motors()
     servo_pwm.stop()
-    cap.release()
+    picam2.stop()
     cv2.destroyAllWindows()
     GPIO.cleanup()
-    print("GPIO 已清理，程序结束")
+    print("程序结束")
